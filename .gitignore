@@ -1,2 +1,4 @@
-node_modules
-*.pyc
+.env
+__pycache__/
+*.py[cod]
+node_modules/
