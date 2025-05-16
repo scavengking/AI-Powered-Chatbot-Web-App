@@ -6,7 +6,7 @@ services:
       pip install -r requirements.txt
       npm install
       npm run build
-    startCommand: "gunicorn main:app"
+    startCommand: "gunicorn app:app"
     envVars:
       - key: OPENAI_API_KEY
         sync: false
