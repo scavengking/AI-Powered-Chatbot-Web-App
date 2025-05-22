@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request, url_for
+from flask import Flask, render_template, jsonify, request, url_for, send_from_directory, make_response
 from flask_pymongo import PyMongo
 import openai
 import os
@@ -18,6 +18,12 @@ if not openai.api_key:
     print("WARNING: OPENAI_API_KEY environment variable is not set!")
 
 app = Flask(__name__, static_folder='static')
+app.config.update(
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax',
+    PERMANENT_SESSION_LIFETIME=3600  # 1 hour
+)
 
 # Set up MongoDB connection (if possible)
 if mongo_uri:
@@ -37,6 +43,22 @@ else:
     mongo = None
     db_connected = False
 
+# Security headers middleware
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    response.headers['X-XSS-Protection'] = '0'
+    response.headers['Cache-Control'] = 'no-store, max-age=0'
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    return response
+
+@app.route("/static/<path:filename>")
+def static_files(filename):
+    response = send_from_directory(app.static_folder, filename)
+    response.headers['Cache-Control'] = 'public, max-age=604800'  # 1 week for static files
+    return response
+
 @app.route("/")
 def home():
     myChats = []
@@ -48,7 +70,9 @@ def home():
     except Exception as e:
         print(f"Error retrieving chats: {e}")
     
-    return render_template("index.html", myChats=myChats)
+    response = make_response(render_template("index.html", myChats=myChats))
+    response.headers['Content-Type'] = 'text/html; charset=utf-8'
+    return response
 
 @app.route("/api", methods=["GET", "POST"])
 def qa():
@@ -73,7 +97,7 @@ def qa():
                 # Check if we have an API key
                 if not openai.api_key:
                     return jsonify({"question": question, 
-                                    "answer": "OpenAI API key not configured. Please set the OPENAI_API_KEY environment variable."})
+                                  "answer": "OpenAI API key not configured. Please set the OPENAI_API_KEY environment variable."})
                 
                 print("Requesting answer from OpenAI")
                 response = openai.chat.completions.create(
@@ -106,7 +130,6 @@ def qa():
         "result": "Thank you! I'm just a machine learning model designed to respond to questions and generate text based on my training data. Is there anything specific you'd like to ask or discuss?"
     })
 
-# Adding a simple route to check database status
 @app.route("/status")
 def status():
     return jsonify({
