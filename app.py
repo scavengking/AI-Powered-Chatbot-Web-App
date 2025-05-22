@@ -1,141 +1,75 @@
-from flask import Flask, render_template, jsonify, request, url_for, send_from_directory, make_response
+from flask import Flask, render_template, jsonify, request, send_from_directory, make_response
 from flask_pymongo import PyMongo
 import openai
 import os
 from dotenv import load_dotenv
+
 load_dotenv()
-
-# Debug print to check if we have a MONGO_URI (don't print the full string for security)
-mongo_uri = os.getenv("MONGO_URI")
-if mongo_uri:
-    print(f"MONGO_URI found with length: {len(mongo_uri)}, starts with: {mongo_uri[:15]}...")
-else:
-    print("WARNING: MONGO_URI environment variable is not set!")
-
-# Securely fetch environment variables
-openai.api_key = os.getenv("OPENAI_API_KEY")
-if not openai.api_key:
-    print("WARNING: OPENAI_API_KEY environment variable is not set!")
 
 app = Flask(__name__, static_folder='static')
 app.config.update(
     SESSION_COOKIE_SECURE=True,
     SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE='Lax',
-    PERMANENT_SESSION_LIFETIME=3600  # 1 hour
+    SESSION_COOKIE_SAMESITE='Lax'
 )
 
-# Set up MongoDB connection (if possible)
+# Database setup
+mongo_uri = os.getenv("MONGO_URI")
+openai.api_key = os.getenv("OPENAI_API_KEY")
+db_connected = False
+
 if mongo_uri:
     app.config["MONGO_URI"] = mongo_uri
     try:
         mongo = PyMongo(app)
-        # Test the connection
         mongo.db.command('ping')
-        print("MongoDB connection successful!")
         db_connected = True
     except Exception as e:
-        print(f"MongoDB connection error: {e}")
+        print(f"MongoDB error: {str(e)}")
         mongo = None
-        db_connected = False
-else:
-    print("No MongoDB URI provided, running in no-database mode")
-    mongo = None
-    db_connected = False
 
-# Security headers middleware
 @app.after_request
-def add_security_headers(response):
+def add_headers(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'SAMEORIGIN'
-    response.headers['X-XSS-Protection'] = '0'
-    response.headers['Cache-Control'] = 'no-store, max-age=0'
-    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
-    return response
-
-@app.route("/static/<path:filename>")
-def static_files(filename):
-    response = send_from_directory(app.static_folder, filename)
-    response.headers['Cache-Control'] = 'public, max-age=604800'  # 1 week for static files
     return response
 
 @app.route("/")
 def home():
-    myChats = []
-    try:
-        if db_connected:
-            chats = mongo.db.chats.find({})
-            myChats = [chat for chat in chats]
-            print(f"Found {len(myChats)} chats in database")
-    except Exception as e:
-        print(f"Error retrieving chats: {e}")
-    
-    response = make_response(render_template("index.html", myChats=myChats))
-    response.headers['Content-Type'] = 'text/html; charset=utf-8'
-    return response
+    chats = []
+    if db_connected:
+        try:
+            chats = list(mongo.db.chats.find({}))
+        except Exception as e:
+            print(f"DB error: {str(e)}")
+    return render_template("index.html", myChats=chats)
 
-@app.route("/api", methods=["GET", "POST"])
+@app.route("/api", methods=["POST"])
 def qa():
-    if request.method == "POST":
-        question = request.json.get("question")
-        print(f"Received question: {question}")
+    data = request.json
+    question = data.get("question", "")
+    
+    if db_connected:
+        existing = mongo.db.chats.find_one({"question": question})
+        if existing:
+            return jsonify(existing)
+
+    try:
+        response = openai.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": question}],
+            temperature=0.7,
+            max_tokens=256
+        )
+        answer = response.choices[0].message.content
         
-        # Try to find existing answer in MongoDB
-        answer = None
         if db_connected:
-            try:
-                chat = mongo.db.chats.find_one({"question": question})
-                if chat:
-                    answer = chat['answer']
-                    print("Found existing answer in database")
-            except Exception as e:
-                print(f"Error querying database: {e}")
-        
-        # If no existing answer, ask OpenAI
-        if not answer:
-            try:
-                # Check if we have an API key
-                if not openai.api_key:
-                    return jsonify({"question": question, 
-                                  "answer": "OpenAI API key not configured. Please set the OPENAI_API_KEY environment variable."})
-                
-                print("Requesting answer from OpenAI")
-                response = openai.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=[
-                        {"role": "system", "content": "You are a helpful assistant."},
-                        {"role": "user", "content": question}
-                    ],
-                    temperature=0.7,
-                    max_tokens=256
-                )
-                answer = response.choices[0].message.content.strip()
-                
-                # Save to database if connected
-                if db_connected:
-                    try:
-                        mongo.db.chats.insert_one({"question": question, "answer": answer})
-                        print("Saved new answer to database")
-                    except Exception as e:
-                        print(f"Error saving to database: {e}")
-                        
-            except Exception as e:
-                print(f"Error from OpenAI API: {e}")
-                return jsonify({"question": question, "answer": f"Error: {str(e)}"})
-        
-        # Return the answer
+            mongo.db.chats.insert_one({"question": question, "answer": answer})
+            
         return jsonify({"question": question, "answer": answer})
     
-    return jsonify({
-        "result": "Thank you! I'm just a machine learning model designed to respond to questions and generate text based on my training data. Is there anything specific you'd like to ask or discuss?"
-    })
-
-@app.route("/status")
-def status():
-    return jsonify({
-        "database_connected": db_connected,
-        "openai_api_configured": bool(openai.api_key)
-    })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5001)
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5001)))
