@@ -5,6 +5,8 @@
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:;">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
     <link rel="stylesheet" href="/static/css/main.css">
     <link rel="shortcut icon" href="https://chat.openai.com/favicon.ico" type="image/x-icon">
     <style>
@@ -31,7 +33,6 @@
             <div class="text-xs m-4 mx-8 text-gray-400">Today</div>
             <div class="chats flex flex-col justify-center items-center space-y-2">
 
-
                 {% for chat in myChats %} 
                 <div class="chat space-x-2 opacity-80 w-[90%] px-5 py-2 rounded-md bg-gray-600 cursor-pointer flex justify-start items-center">
                     <svg stroke="currentColor" fill="none" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round"
@@ -46,7 +47,6 @@
             </div>
 
         </div>
-
 
         <div class="right1 w-10/12 flex justify-center items-center flex-col">
             <div class="text-center w-full text-4xl font-bold my-10">
@@ -72,7 +72,7 @@
                         class="bg-gray-600 w-[13vw] text-sm hover:bg-gray-700 py-4 px-4 mx-4  my-2 rounded-md">"Explain
                         quantum computing in simple terms" →</button>
                     <button class="bg-gray-600 w-[13vw] text-sm hover:bg-gray-700 py-4 px-4 mx-4  my-2 rounded-md">"Got
-                        any creative ideas for a 10 year old’s birthday?" →</button>
+                        any creative ideas for a 10 year old's birthday?" →</button>
                     <button class="bg-gray-600 w-[13vw] text-sm hover:bg-gray-700 py-4 px-4 mx-4  my-2 rounded-md">"How
                         do I make an HTTP request in Javascript?" →</button>
                 </div>
